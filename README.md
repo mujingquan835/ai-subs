@@ -6,7 +6,11 @@
 
 > 适用于 macOS 14 及以上。数据全部保存在本机，不需要注册账号。
 
-![小组件预览](docs/widget-mockups/即将扣费-实现预览.png)
+![主界面](docs/intro/main.png)
+
+![桌面小组件](docs/intro/widgets.png)
+
+图文介绍见 [docs/介绍.md](docs/介绍.md)。
 
 ## 功能
 
