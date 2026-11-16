@@ -40,47 +40,62 @@ struct DiscoveryConsentCard: View {
     }
 }
 
-/// 本机识别结果 + 额度
-struct DiscoverySection: View {
+/// 订阅列表标题右侧的工具：刷新额度、设置向导、更多
+struct DiscoveryToolbar: View {
+    @EnvironmentObject var discovery: Discovery
+    var body: some View {
+        HStack(spacing: 10) {
+            if discovery.refreshing { ProgressView().controlSize(.small) }
+            Button { discovery.scan(); Task { await discovery.refreshQuota() } } label: { Image(systemName: "arrow.clockwise") }
+                .buttonStyle(.borderless)
+                .help("重新扫描本机并刷新额度")
+                .disabled(discovery.refreshing)
+            Button("设置向导…") { discovery.showGuide = true }
+                .buttonStyle(.borderless)
+                .help("安装、登录 Codex 与 Claude Code")
+            Menu {
+                Button("设置向导…") { discovery.showGuide = true }
+                Divider()
+                Button("关闭自动识别", role: .destructive) { withAnimation(.snappy) { discovery.turnOff() } }
+            } label: { Image(systemName: "ellipsis.circle") }
+                .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+        }
+        .padding(.trailing, 4)
+    }
+}
+
+/// 本机发现、但还没加进订阅的工具。识别到订阅档位的可一键导入，其余可快速添加。
+struct DiscoveredChips: View {
     @EnvironmentObject var discovery: Discovery
     @EnvironmentObject var store: Store
     let onImport: (Subscription) -> Void
+    let onAdd: (Service) -> Void
+
+    private var pending: [DetectedAgent] {
+        discovery.agents.filter { a in !store.items.contains { $0.catalogService.id == a.serviceID } }
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                SectionHeader(title: "本机 AI 工具", count: discovery.agents.count)
-                Spacer()
-                if discovery.refreshing { ProgressView().controlSize(.small) }
-                Button { discovery.scan(); Task { await discovery.refreshQuota() } } label: { Image(systemName: "arrow.clockwise") }
-                    .buttonStyle(.borderless)
-                    .help("重新扫描并刷新额度")
-                    .disabled(discovery.refreshing)
-                Button("设置向导…") { discovery.showGuide = true }
-                    .buttonStyle(.borderless)
-                    .help("安装、登录 Codex 与 Claude Code")
-                Menu {
-                    Button("设置向导…") { discovery.showGuide = true }
-                    Divider()
-                    Button("关闭自动识别", role: .destructive) { withAnimation(.snappy) { discovery.turnOff() } }
-                } label: { Image(systemName: "ellipsis.circle") }
-                    .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
-            }
-            .padding(.trailing, 4)
-            Card {
-                if discovery.agents.isEmpty {
-                    Text("没有找到已安装的 AI 工具").foregroundStyle(.secondary).frame(maxWidth: .infinity).padding(20)
-                } else {
-                    VStack(spacing: 0) {
-                        ForEach(Array(discovery.agents.enumerated()), id: \.element.id) { i, agent in
-                            AgentRow(agent: agent, quota: discovery.quota(for: agent.serviceID),
-                                     added: store.items.contains { $0.catalogService.id == agent.serviceID },
-                                     onImport: { onImport(makeSubscription(agent)) },
-                                     onLogin: { discovery.loginClaude() })
-                            if i < discovery.agents.count - 1 { Divider().padding(.leading, 60) }
+        if !pending.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    SectionHeader(title: "本机还发现")
+                    Spacer()
+                    // 没有订阅时列表不显示，工具放在这里
+                    if store.items.isEmpty { DiscoveryToolbar() }
+                }
+                Card(padding: 14) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("这些工具装在本机，但还没加进订阅。点一下添加；带“可导入”的已识别到订阅档位和续费日。")
+                            .font(.callout).foregroundStyle(.secondary)
+                        FlowLayout(spacing: 8) {
+                            ForEach(pending) { agent in
+                                DiscoveredChip(agent: agent) {
+                                    if agent.account != nil { onImport(makeSubscription(agent)) } else { onAdd(agent.service) }
+                                }
+                            }
                         }
                     }
-                    .padding(.vertical, 4)
                 }
             }
         }
@@ -98,95 +113,29 @@ struct DiscoverySection: View {
     }
 }
 
-struct AgentRow: View {
+private struct DiscoveredChip: View {
     let agent: DetectedAgent
-    let quota: AccountQuota?
-    let added: Bool
-    let onImport: () -> Void
-    var onLogin: () -> Void = {}
-
-    private var detail: String {
-        guard let a = agent.account else { return agent.sources.joined(separator: " · ") + " · 未识别到订阅" }
-        var parts: [String] = []
-        if let c = a.channel { parts.append(c == "Apple App Store" ? "Apple 订阅" : c) }
-        if let d = a.anchor {
-            let t = d.formatted(.dateTime.month().day().locale(Locale(identifier: "zh_CN")))
-            parts.append(a.anchorIsRenewal ? "本期至 \(t)" : "开通于 \(t)")
-        }
-        parts.append(agent.sources.first ?? "")
-        return parts.joined(separator: " · ")
-    }
-
+    let action: () -> Void
+    @State private var hovering = false
     var body: some View {
-        HStack(spacing: 12) {
-            ServiceIcon(service: agent.service, size: 32)
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    Text(agent.account == nil ? agent.service.name : agent.title).font(.body.weight(.medium))
+        Button(action: action) {
+            HStack(spacing: 7) {
+                ServiceIcon(service: agent.service, size: 20)
+                Text(agent.account == nil ? agent.service.name : agent.title).foregroundStyle(.primary)
+                if agent.account != nil {
+                    Text("可导入").font(.caption2.weight(.semibold)).foregroundStyle(Color.accentColor)
+                        .padding(.horizontal, 5).padding(.vertical, 1)
+                        .background(Color.accentColor.opacity(0.12), in: Capsule())
                 }
-                Text(detail).font(.callout).foregroundStyle(.secondary).lineLimit(1)
+                Image(systemName: "plus").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
             }
-            .layoutPriority(1)
-            Spacer(minLength: 12)
-            if let quota {
-                if quota.windows.isEmpty, quota.needsLogin == true, agent.serviceID == "claude" {
-                    HStack(spacing: 8) {
-                        Text("登录 Claude Code 后可查看额度").font(.callout).foregroundStyle(.secondary).lineLimit(1)
-                        Button("登录获取", action: onLogin).controlSize(.small)
-                            .help("打开终端启动 Claude Code，输入 /login 用订阅账号登录")
-                    }
-                } else if quota.windows.isEmpty, let err = quota.error {
-                    Label(err, systemImage: "exclamationmark.circle").font(.callout).foregroundStyle(.secondary).lineLimit(1)
-                } else {
-                    HStack(spacing: 14) {
-                        ForEach(quota.windows, id: \.label) { QuotaGauge(window: $0) }
-                    }
-                    .help(quota.error.map { "上次刷新失败：\($0)" } ?? "更新于 \(quota.fetchedAt.formatted(date: .omitted, time: .shortened))")
-                }
-            }
-            Group {
-                if agent.account == nil {
-                    EmptyView()
-                } else if added {
-                    Text("已添加").font(.callout).foregroundStyle(.secondary)
-                } else {
-                    Button("导入", action: onImport).controlSize(.small)
-                }
-            }
-            .frame(width: 56, alignment: .trailing)
+            .padding(.leading, 6).padding(.trailing, 10).padding(.vertical, 5)
+            .background(Color.primary.opacity(hovering ? 0.07 : 0), in: Capsule())
+            .overlay(Capsule().strokeBorder(Color.primary.opacity(hovering ? 0.2 : 0.12), lineWidth: 1))
+            .contentShape(Capsule())
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-    }
-}
-
-/// 一个额度窗口：标签、百分比和一条细进度条；≥80% 橙色，用完红色。
-struct QuotaGauge: View {
-    let window: QuotaWindow
-    var width: CGFloat = 92
-    var body: some View {
-        let used = window.used()
-        let color: Color = switch window.level() { case .normal: .accentColor; case .warning: .orange; case .exhausted: .red }
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 4) {
-                Text(window.label).foregroundStyle(.secondary)
-                Spacer(minLength: 2)
-                Text(window.level() == .exhausted ? "已用完" : "\(Int(used.rounded()))%")
-                    .fontWeight(.medium).monospacedDigit()
-                    .foregroundStyle(window.level() == .normal ? Color.primary : color)
-            }
-            .font(.caption)
-            GeometryReader { g in
-                ZStack(alignment: .leading) {
-                    Capsule().fill(Color.primary.opacity(0.08))
-                    Capsule().fill(color).frame(width: max(3, g.size.width * used / 100))
-                }
-            }
-            .frame(height: 4)
-        }
-        .frame(width: width)
-        .help(window.resetText() ?? "")
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(window.label)已用 \(Int(used))%，\(window.resetText() ?? "")")
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .help(agent.sources.joined(separator: " · "))
     }
 }

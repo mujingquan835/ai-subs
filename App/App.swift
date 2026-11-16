@@ -4,11 +4,13 @@ import WidgetKit
 @main struct SubscriptionApp: App {
     @StateObject var store = Store()
     @StateObject var discovery = Discovery()
+    @StateObject var rates = ExchangeRates()
     var body: some Scene {
         WindowGroup("AI 订阅管家") {
             ContentView()
                 .environmentObject(store)
                 .environmentObject(discovery)
+                .environmentObject(rates)
                 .onAppear {
                     store.onSave = { WidgetCenter.shared.reloadAllTimelines() }
                     WidgetCenter.shared.reloadAllTimelines()

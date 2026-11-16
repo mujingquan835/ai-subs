@@ -27,12 +27,14 @@ struct ContentView: View {
                 if let error = store.error { ErrorBanner(text: error) { store.error = nil } }
                 if !discovery.enabled && !discovery.dismissed { DiscoveryConsentCard() }
                 if store.items.isEmpty {
-                    if discovery.enabled { DiscoverySection { editor = .prefill($0) } }
                     OnboardingCard { editor = .new($0) }
                 } else {
                     SummaryCard(items: store.sorted) { editor = .edit($0) }
-                    if discovery.enabled { DiscoverySection { editor = .prefill($0) } }
                     list
+                }
+                // 本机发现、但还没加进订阅的工具：一排可点的小按钮，不再单独列一层
+                if discovery.enabled {
+                    DiscoveredChips(onImport: { editor = .prefill($0) }, onAdd: { editor = .new($0) })
                 }
                 if !discovery.enabled && discovery.dismissed {
                     Button("自动识别本机 AI 订阅…") { withAnimation(.snappy) { discovery.dismissed = false } }
@@ -101,13 +103,17 @@ struct ContentView: View {
                     .padding(.vertical, 28)
             }
         }
-        if !soon.isEmpty { group("即将扣费", soon) }
-        if !later.isEmpty { group(soon.isEmpty ? "全部订阅" : "之后", later) }
+        if !soon.isEmpty { group("即将扣费", soon, tools: true) }
+        if !later.isEmpty { group(soon.isEmpty ? "全部订阅" : "之后", later, tools: soon.isEmpty) }
     }
 
-    private func group(_ title: String, _ items: [Subscription]) -> some View {
+    private func group(_ title: String, _ items: [Subscription], tools: Bool = false) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            SectionHeader(title: title, count: items.count)
+            HStack {
+                SectionHeader(title: title, count: items.count)
+                Spacer()
+                if tools && discovery.enabled { DiscoveryToolbar() }
+            }
             Card {
                 VStack(spacing: 0) {
                     ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
@@ -204,8 +210,46 @@ struct SubscriptionRow: View {
 // MARK: - 概览
 
 struct SummaryCard: View {
+    @EnvironmentObject var rates: ExchangeRates
     let items: [Subscription]
     let onOpen: (Subscription) -> Void
+
+    /// 所有订阅按月折算后换成人民币；没有汇率的币种计入 missing
+    private var monthlyCNY: (total: Decimal, missing: [String]) {
+        var total: Decimal = 0
+        var missing: Set<String> = []
+        for item in items {
+            let perMonth = (item.decimalAmount ?? 0) / Decimal(max(1, item.months))
+            if let cny = rates.toCNY(perMonth, currency: item.currency) { total += cny } else { missing.insert(item.currency) }
+        }
+        return (total, missing.sorted())
+    }
+
+    private var cnyHeader: some View {
+        let m = monthlyCNY
+        let digits = m.total >= 100 ? 0 : 2
+        return HStack(alignment: .center, spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("你的月均 AI 支出").font(.subheadline).foregroundStyle(.secondary)
+                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                    Text("约").font(.title3).foregroundStyle(.secondary)
+                    Text("¥" + m.total.formatted(.number.precision(.fractionLength(digits)).locale(Locale(identifier: "zh_CN"))))
+                        .font(.system(size: 30, weight: .bold, design: .rounded)).monospacedDigit()
+                        .contentTransition(.numericText())
+                    Text("/ 月").font(.callout).foregroundStyle(.secondary)
+                }
+            }
+            Spacer()
+            VStack(alignment: .trailing, spacing: 4) {
+                Text(rates.sourceText + (m.missing.isEmpty ? "" : "，\(m.missing.joined(separator: "、")) 未换算"))
+                    .font(.caption).foregroundStyle(.secondary)
+                Toggle("联网更新汇率", isOn: $rates.autoUpdate)
+                    .toggleStyle(.switch).controlSize(.mini).font(.caption)
+                    .help(rates.lastError.map { "上次更新失败：\($0)，正在使用已有汇率" } ?? "开启后每 12 小时从欧洲央行数据更新一次；关闭则使用内置汇率")
+            }
+        }
+        .padding(.horizontal, 16).padding(.top, 14).padding(.bottom, 12)
+    }
 
     /// 未来 30 天内（含今天）的扣费，按币种分别求和，不跨币种相加。
     private var next30: [(String, Decimal)] {
@@ -232,6 +276,9 @@ struct SummaryCard: View {
 
     var body: some View {
         Card {
+          VStack(spacing: 0) {
+            cnyHeader
+            Divider().padding(.horizontal, 16)
             HStack(alignment: .top, spacing: 0) {
                 if let first = items.first {
                     metric("下一次扣费") {
@@ -255,8 +302,9 @@ struct SummaryCard: View {
                 Divider().padding(.vertical, 14)
                 metric("未来 30 天") { amounts(next30, empty: "无扣费") }.frame(width: 190)
                 Divider().padding(.vertical, 14)
-                metric("月均 · \(items.count) 项") { amounts(monthly, empty: "—") }.frame(width: 190)
+                metric("月均（原币）· \(items.count) 项") { amounts(monthly, empty: "—") }.frame(width: 190)
             }
+          }
         }
     }
 
