@@ -24,7 +24,7 @@
 
 ## 下载安装
 
-1. 到 [Releases](https://github.com/mujingquan835/ai-subs/releases/latest) 下载 `AI订阅管家-x.x.zip`（约 3 MB，同时支持 Apple 芯片和 Intel 芯片，需要 macOS 14 及以上）。
+1. 到 [Releases](https://github.com/mujingquan835/ai-subs/releases/latest) 下载 `ai-subs-x.x.zip`（约 3 MB，同时支持 Apple 芯片和 Intel 芯片，需要 macOS 14 及以上）。
 2. 双击解压，把 **AI订阅管家.app** 拖进“应用程序”文件夹。桌面小组件只在 App 位于“应用程序”时可用。
 3. 第一次打开：目前是测试版，没有经过苹果公证，双击时系统会提示“无法验证开发者”。点“完成”，然后打开 **系统设置 → 隐私与安全性**，在页面下方找到“已阻止使用 AI订阅管家”，点 **仍要打开** 并确认。之后就能正常打开了。
 

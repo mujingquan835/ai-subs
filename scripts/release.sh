@@ -1,5 +1,5 @@
 #!/bin/zsh
-# 构建可分发的测试版：通用二进制（Apple 芯片 + Intel），开发证书签名（未公证），输出 dist/AI订阅管家-<版本>.zip
+# 构建可分发的测试版：通用二进制（Apple 芯片 + Intel），开发证书签名（未公证），输出 dist/ai-subs-<版本>.zip（GitHub 附件不支持中文文件名）
 set -euo pipefail
 cd "$(dirname "$0")/.."
 if [[ -z "${AISUB_TEAM_ID:-}" ]]; then
@@ -18,6 +18,6 @@ VERSION=$(defaults read "$PWD/$SRC/Contents/Info.plist" CFBundleShortVersionStri
 codesign --verify --deep --strict "$SRC"
 rm -rf dist && mkdir -p dist/pkg
 ditto "$SRC" "dist/pkg/AI订阅管家.app"          # 改名不影响签名
-(cd dist/pkg && ditto -c -k --sequesterRsrc --keepParent "AI订阅管家.app" "../AI订阅管家-$VERSION.zip")
+(cd dist/pkg && ditto -c -k --sequesterRsrc --keepParent "AI订阅管家.app" "../ai-subs-$VERSION.zip")
 rm -rf dist/pkg
-echo "已生成 dist/AI订阅管家-$VERSION.zip"
+echo "已生成 dist/ai-subs-$VERSION.zip"
