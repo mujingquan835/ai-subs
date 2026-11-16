@@ -7,3 +7,4 @@ AISubscriptions.xcodeproj/
 App/Info.plist
 Widgets/Info.plist
 *.entitlements
+dist/
